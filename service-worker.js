@@ -1,13 +1,14 @@
 /* CIRE Study — Service Worker
    Cache-first strategy for full offline support */
 
-const CACHE_VERSION = 'cire-study-v1';
+const CACHE_VERSION = 'cire-study-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './questions.js',
+  './questions-extra.js',
   './manifest.json',
   './icons/icon.svg',
   './icons/icon-192.png',

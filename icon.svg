@@ -1,0 +1,32 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Warm paper background -->
+  <rect width="512" height="512" rx="112" fill="#0C7466"/>
+
+  <!-- Inner subtle vignette -->
+  <rect width="512" height="512" rx="112" fill="url(#vignette)"/>
+
+  <!-- Serif C in cream -->
+  <text x="256" y="354"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="340"
+        font-weight="500"
+        font-style="italic"
+        text-anchor="middle"
+        fill="#F5F1E8"
+        letter-spacing="-8">C</text>
+
+  <!-- Small bookmark accent in top right -->
+  <path d="M 380 96 L 380 196 L 410 176 L 440 196 L 440 96 Z"
+        fill="#F5F1E8"
+        opacity="0.92"/>
+
+  <!-- Tiny dot detail -->
+  <circle cx="410" cy="138" r="6" fill="#0C7466"/>
+
+  <defs>
+    <radialGradient id="vignette" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#0C7466" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#08594F" stop-opacity="0.5"/>
+    </radialGradient>
+  </defs>
+</svg>

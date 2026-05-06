@@ -611,6 +611,58 @@ input, select {
   border-color: var(--text);
 }
 
+/* Question source picker (practice exam / extra / both) */
+.source-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.source-btn {
+  padding: 14px 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-soft);
+  transition: all 160ms var(--ease);
+  text-align: center;
+}
+
+.source-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.source-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.source-btn .source-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.source-btn .source-count {
+  font-family: var(--font-serif);
+  font-variation-settings: "opsz" 144;
+  font-size: 11px;
+  font-weight: 400;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+@media (max-width: 380px) {
+  .source-btn { padding: 10px 6px; }
+  .source-btn .source-name { font-size: 12px; }
+}
+
 /* Element chips (topic filter) */
 .chip-grid {
   display: flex;

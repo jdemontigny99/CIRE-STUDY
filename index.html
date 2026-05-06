@@ -112,6 +112,26 @@
       <h2 class="setup-title" id="setup-title">New session</h2>
       <p class="setup-sub" id="setup-sub">Configure your study session.</p>
 
+      <div class="field" id="field-source">
+        <div class="field-label">
+          <span>Question set</span>
+        </div>
+        <div class="source-row">
+          <button class="source-btn active" data-set="exam">
+            <span class="source-name">Practice exam</span>
+            <span class="source-count" id="src-count-exam">110</span>
+          </button>
+          <button class="source-btn" data-set="extra">
+            <span class="source-name">Extra questions</span>
+            <span class="source-count" id="src-count-extra">110</span>
+          </button>
+          <button class="source-btn" data-set="both">
+            <span class="source-name">Both</span>
+            <span class="source-count" id="src-count-both">220</span>
+          </button>
+        </div>
+      </div>
+
       <div class="field" id="field-count">
         <div class="field-label">
           <span>Questions</span>
@@ -213,6 +233,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="questions.js"></script>
+  <script src="questions-extra.js"></script>
   <script src="app.js"></script>
   <script>
     // Register service worker for offline use

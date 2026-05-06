@@ -16,6 +16,7 @@
     streak: 0,           // current day streak
     sessions: 0,         // sessions completed
     perQuestion: {},     // { id: { attempts, correct, lastWrong } }
+    recentIds: [],       // question IDs ordered by recency (oldest first, newest last)
     theme: 'auto'        // 'auto' | 'light' | 'dark'
   };
 
@@ -23,6 +24,17 @@
 
   // Session-scoped state
   let session = null;
+
+  // ---------- Combined question bank ----------
+  // Tag each question with its source ('exam' = official practice, 'extra' = custom).
+  // We work off a single combined ALL_QUESTIONS array everywhere downstream so existing
+  // logic (wrongIds, bookmarks, recentIds — all keyed by id) keeps working unchanged.
+  const ALL_QUESTIONS = [
+    ...QUESTIONS.map(q => ({ ...q, source: 'exam' })),
+    ...(typeof QUESTIONS_EXTRA !== 'undefined'
+      ? QUESTIONS_EXTRA.map(q => ({ ...q, source: 'extra' }))
+      : [])
+  ];
 
   // ---------- Persistence ----------
   function loadState() {
@@ -133,8 +145,16 @@
   let setupConfig = {
     count: 10,
     topics: new Set(), // empty = all
-    source: 'all'      // 'all' | 'wrong' | 'bookmarks'
+    source: 'all',     // 'all' | 'wrong' | 'bookmarks'
+    questionSet: 'exam' // 'exam' | 'extra' | 'both' — only applies when source === 'all'
   };
+
+  function getBaseQuestions() {
+    // Returns the active question pool based on questionSet (before topic filter)
+    if (setupConfig.questionSet === 'exam') return ALL_QUESTIONS.filter(q => q.source === 'exam');
+    if (setupConfig.questionSet === 'extra') return ALL_QUESTIONS.filter(q => q.source === 'extra');
+    return ALL_QUESTIONS;
+  }
 
   function renderSetup() {
     // Title varies by source
@@ -163,19 +183,45 @@
     $$('.preset-btn').forEach(btn => {
       const c = parseInt(btn.dataset.count);
       const realCount = Math.min(c, max);
-      if (c >= 110) {
+      // The "All" preset has data-count="110" historically; now it actually means
+      // "everything in the current pool", which can be larger or smaller than 110.
+      if (btn.dataset.count === '110') {
         btn.textContent = max > 0 ? `All (${max})` : 'All';
-      }
-      if (c > max && c < 110) {
+        btn.style.opacity = '';
+        btn.style.pointerEvents = '';
+      } else if (c > max) {
         btn.style.opacity = '0.4';
         btn.style.pointerEvents = 'none';
       } else {
         btn.style.opacity = '';
         btn.style.pointerEvents = '';
       }
-      // active state
-      btn.classList.toggle('active', realCount === setupConfig.count);
+      // active state — for "All" preset, active when count matches max
+      const isAllPreset = btn.dataset.count === '110';
+      btn.classList.toggle('active',
+        isAllPreset ? setupConfig.count === max : realCount === setupConfig.count);
     });
+
+    // Question-set picker — only for the standard "all" source
+    const fieldSource = $('#field-source');
+    if (setupConfig.source !== 'all') {
+      fieldSource.style.display = 'none';
+    } else {
+      fieldSource.style.display = '';
+      // Update active state on source buttons
+      $$('.source-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.set === setupConfig.questionSet);
+      });
+      // Update the live counts on each source button (respects topic filter)
+      const examPool = ALL_QUESTIONS.filter(q => q.source === 'exam');
+      const extraPool = ALL_QUESTIONS.filter(q => q.source === 'extra');
+      const filterByTopic = (arr) => setupConfig.topics.size > 0
+        ? arr.filter(q => setupConfig.topics.has(q.element))
+        : arr;
+      $('#src-count-exam').textContent = filterByTopic(examPool).length;
+      $('#src-count-extra').textContent = filterByTopic(extraPool).length;
+      $('#src-count-both').textContent = filterByTopic(ALL_QUESTIONS).length;
+    }
 
     // Topic chips — only show element filter for "all" source
     const fieldTopics = $('#field-topics');
@@ -192,14 +238,16 @@
 
   function renderChips() {
     const grid = $('#chip-grid');
+    const base = getBaseQuestions();
     const counts = {};
-    QUESTIONS.forEach(q => counts[q.element] = (counts[q.element] || 0) + 1);
+    base.forEach(q => counts[q.element] = (counts[q.element] || 0) + 1);
 
     const allActive = setupConfig.topics.size === 0;
-    let html = `<button class="chip ${allActive ? 'active' : ''}" data-topic="all">All <span class="count">${QUESTIONS.length}</span></button>`;
+    let html = `<button class="chip ${allActive ? 'active' : ''}" data-topic="all">All <span class="count">${base.length}</span></button>`;
     Object.entries(ELEMENTS).forEach(([num, name]) => {
       const active = setupConfig.topics.has(parseInt(num));
-      html += `<button class="chip ${active ? 'active' : ''}" data-topic="${num}">${name} <span class="count">${counts[num] || 0}</span></button>`;
+      const count = counts[num] || 0;
+      html += `<button class="chip ${active ? 'active' : ''}" data-topic="${num}">${name} <span class="count">${count}</span></button>`;
     });
     grid.innerHTML = html;
 
@@ -224,11 +272,11 @@
   function getAvailablePool(source) {
     let pool;
     if (source === 'wrong') {
-      pool = QUESTIONS.filter(q => state.wrongIds.includes(q.id));
+      pool = ALL_QUESTIONS.filter(q => state.wrongIds.includes(q.id));
     } else if (source === 'bookmarks') {
-      pool = QUESTIONS.filter(q => state.bookmarks.includes(q.id));
+      pool = ALL_QUESTIONS.filter(q => state.bookmarks.includes(q.id));
     } else {
-      pool = QUESTIONS;
+      pool = getBaseQuestions();
       if (setupConfig.topics.size > 0) {
         pool = pool.filter(q => setupConfig.topics.has(q.element));
       }
@@ -243,7 +291,26 @@
       return;
     }
     const count = Math.min(setupConfig.count, pool.length);
-    const questions = shuffle(pool).slice(0, count).map(q => {
+
+    // Recency-aware selection: prefer questions not seen in recent sessions.
+    // state.recentIds is ordered oldest -> newest; "seen" questions get cycled
+    // back into rotation only after all unseen options are exhausted.
+    const poolMap = new Map(pool.map(q => [q.id, q]));
+    const recentInPoolIds = state.recentIds.filter(id => poolMap.has(id));
+    const recentSet = new Set(recentInPoolIds);
+    const unseen = pool.filter(q => !recentSet.has(q.id));
+
+    let chosen;
+    if (unseen.length >= count) {
+      chosen = shuffle(unseen).slice(0, count);
+    } else {
+      // Use all unseen, then fill from oldest-seen first
+      const needed = count - unseen.length;
+      const fromSeen = recentInPoolIds.slice(0, needed).map(id => poolMap.get(id));
+      chosen = shuffle([...unseen, ...fromSeen]);
+    }
+
+    const questions = chosen.map(q => {
       // Shuffle answer options too — but track new correct letter
       const letters = ['A', 'B', 'C', 'D'];
       const orig = letters.map((l, i) => ({ l, text: q.options[i] }));
@@ -385,6 +452,18 @@
       if (!state.wrongIds.includes(q.id)) state.wrongIds.push(q.id);
     }
 
+    // Bump this question to the most-recent slot so future sessions
+    // prefer questions that haven't been seen yet
+    const rIdx = state.recentIds.indexOf(q.id);
+    if (rIdx !== -1) state.recentIds.splice(rIdx, 1);
+    state.recentIds.push(q.id);
+    // Cap recent history. Keep at most (total - 10) so each new "all questions"
+    // session is guaranteed at least 10 fresh picks. Hard floor of 50.
+    const maxRecent = Math.max(50, ALL_QUESTIONS.length - 10);
+    if (state.recentIds.length > maxRecent) {
+      state.recentIds.splice(0, state.recentIds.length - maxRecent);
+    }
+
     saveState();
 
     // Auto-scroll to next button on mobile so it's visible
@@ -496,7 +575,7 @@
 
   function retrySession() {
     // Re-shuffle the same questions for another go
-    const sourceQs = session.questions.map(sq => QUESTIONS.find(q => q.id === sq.id));
+    const sourceQs = session.questions.map(sq => ALL_QUESTIONS.find(q => q.id === sq.id));
     const letters = ['A', 'B', 'C', 'D'];
     const questions = shuffle(sourceQs).map(q => {
       const orig = letters.map((l, i) => ({ l, text: q.options[i] }));
@@ -543,18 +622,19 @@
     $$('[data-action]').forEach(btn => {
       btn.addEventListener('click', () => {
         const action = btn.dataset.action;
+        const lastSet = setupConfig.questionSet || 'exam';
         if (action === 'start') {
-          setupConfig = { count: 10, topics: new Set(), source: 'all' };
+          setupConfig = { count: 10, topics: new Set(), source: 'all', questionSet: lastSet };
           $('#count-slider').value = 10;
           renderSetup();
           showView('setup');
         } else if (action === 'review') {
-          setupConfig = { count: Math.min(10, state.wrongIds.length), topics: new Set(), source: 'wrong' };
+          setupConfig = { count: Math.min(10, state.wrongIds.length), topics: new Set(), source: 'wrong', questionSet: lastSet };
           $('#count-slider').value = setupConfig.count;
           renderSetup();
           showView('setup');
         } else if (action === 'bookmarks') {
-          setupConfig = { count: Math.min(10, state.bookmarks.length), topics: new Set(), source: 'bookmarks' };
+          setupConfig = { count: Math.min(10, state.bookmarks.length), topics: new Set(), source: 'bookmarks', questionSet: lastSet };
           $('#count-slider').value = setupConfig.count;
           renderSetup();
           showView('setup');
@@ -592,6 +672,18 @@
         $('#count-val').textContent = realC;
         $$('.preset-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+      });
+    });
+
+    // Setup — source (question set) buttons
+    $$('.source-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newSet = btn.dataset.set;
+        if (setupConfig.questionSet === newSet) return;
+        setupConfig.questionSet = newSet;
+        // Reset topic filter when switching sets so the user sees the full new pool
+        setupConfig.topics.clear();
+        renderSetup();
       });
     });
 
